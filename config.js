@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ========================================================
  * 🌟 JONAS PROFILE CONFIGURATION (guns.lol Style)
  * ========================================================
@@ -13,8 +13,17 @@ const CONFIG = {
     titleGlow: true, // Schöner Leuchteffekt um den Namen
     location: "FFM", // z.B. "FFM", "Frankfurt", "Germany"
     badge: "VIP",    // Kleines Badge neben dem Namen (optional, leer lassen für keins)
-    avatar: "assets/avatar.jpg", // Pfad zu deinem Profilbild
+    avatar: "assets/avatar.jpg", // Lokales Fallback-Profilbild
     viewsStart: 119, // Startwert für den Aufrufzähler
+  },
+
+  // Discord Live-Integration (Lanyard API)
+  discord: {
+    enabled: true,
+    userId: "453756683886264321", // Jonas's Discord User ID
+    useDiscordAvatar: true,       // Dynamisches Discord-Profilbild laden
+    showStatusRing: true,         // Farbiger Statusring um das Profilbild (Online, Idle, DND, Offline)
+    showPresenceCard: true        // Live Rich-Presence Box (Spiele, Spotify, Status)
   },
 
   // Medien (Hintergrund-Video & Sound)

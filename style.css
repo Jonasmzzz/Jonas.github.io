@@ -1,4 +1,4 @@
-﻿/* ========================================================
+/* ========================================================
    JONAS GUNS.LOL THEME - COMPLETE STYLESHEET WITH ADMIN
    ======================================================== */
 
@@ -13,6 +13,37 @@
   --accent-glow: #ffffff;
   --glass-blur: 24px;
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Discord Live Status Colors */
+  --status-online: #23a55a;
+  --status-online-glow: rgba(35, 165, 90, 0.45);
+  --status-idle: #f0b232;
+  --status-idle-glow: rgba(240, 178, 50, 0.45);
+  --status-dnd: #f23f43;
+  --status-dnd-glow: rgba(242, 63, 67, 0.45);
+  --status-offline: #80848e;
+  --status-offline-glow: rgba(128, 132, 142, 0.2);
+
+  --discord-status-color: var(--status-offline);
+  --discord-status-glow: var(--status-offline-glow);
+}
+
+/* Discord Status Helper Classes */
+.status-online {
+  --discord-status-color: var(--status-online);
+  --discord-status-glow: var(--status-online-glow);
+}
+.status-idle {
+  --discord-status-color: var(--status-idle);
+  --discord-status-glow: var(--status-idle-glow);
+}
+.status-dnd {
+  --discord-status-color: var(--status-dnd);
+  --discord-status-glow: var(--status-dnd-glow);
+}
+.status-offline {
+  --discord-status-color: var(--status-offline);
+  --discord-status-glow: var(--status-offline-glow);
 }
 
 * {
@@ -161,42 +192,127 @@ html, body {
   opacity: 1;
 }
 
-/* Avatar */
-.avatar-wrapper {
-  position: relative;
-  width: 86px;
-  height: 86px;
+/* --------------------------------------------------------
+   Avatar with Concentric Status Ring & Discord Badge
+   -------------------------------------------------------- */
+.avatar-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
   margin: 0 auto 16px;
+  width: 100%;
 }
 
-.avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+.avatar-wrapper {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center; /* 100% mathematical concentric centering */
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.avatar-wrapper:hover .avatar-img {
-  transform: scale(1.06);
+.avatar-wrapper:hover {
+  transform: scale(1.05);
 }
 
+/* Background Ambient Glow */
 .avatar-glow {
-  position: absolute;
-  inset: -4px;
+  grid-area: 1 / 1;
+  width: 104px;
+  height: 104px;
   border-radius: 50%;
-  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-  opacity: 0.5;
-  z-index: -1;
-  filter: blur(8px);
-  animation: pulse-avatar 3s ease-in-out infinite;
+  background: radial-gradient(circle, var(--discord-status-glow, var(--accent-glow)) 0%, transparent 72%);
+  opacity: 0.55;
+  z-index: 0;
+  filter: blur(10px);
+  pointer-events: none;
+  animation: pulse-avatar 3.5s ease-in-out infinite;
+  transition: background 0.4s ease;
+}
+
+/* Concentric Outer Status Ring */
+.avatar-ring {
+  grid-area: 1 / 1;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 2.5px solid var(--discord-status-color, rgba(255, 255, 255, 0.25));
+  box-shadow: 0 0 16px var(--discord-status-glow, rgba(255, 255, 255, 0.12));
+  pointer-events: none;
+  z-index: 2;
+  box-sizing: border-box;
+  transition: border-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+/* Centered Avatar Image */
+.avatar-img {
+  grid-area: 1 / 1;
+  width: 82px;
+  height: 82px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2.5px solid rgba(18, 18, 24, 0.95);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  z-index: 1;
+  display: block;
+  box-sizing: border-box;
+  transition: opacity 0.3s ease;
+}
+
+/* Discord Status Badge Dot on bottom-right corner */
+.status-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--discord-status-color, #80848e);
+  border: 3.5px solid #121218;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  transition: background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.status-badge-inner {
+  display: block;
+  pointer-events: none;
+}
+
+/* DND horizontal bar */
+.status-badge.status-dnd .status-badge-inner {
+  width: 8px;
+  height: 2.5px;
+  background-color: #121218;
+  border-radius: 2px;
+}
+
+/* Idle crescent or inner hollow */
+.status-badge.status-idle .status-badge-inner {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: transparent;
+  box-shadow: -2.5px -2.5px 0 0 #121218;
+  transform: rotate(-15deg);
+}
+
+/* Offline hollow center */
+.status-badge.status-offline .status-badge-inner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #121218;
 }
 
 @keyframes pulse-avatar {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.75; }
+  0%, 100% { opacity: 0.35; transform: scale(0.98); }
+  50% { opacity: 0.75; transform: scale(1.03); }
 }
 
 /* User Meta */
@@ -231,6 +347,211 @@ html, body {
   height: 14px;
   fill: #a1a1aa;
 }
+
+/* --------------------------------------------------------
+   Discord Live Presence Card (Lanyard)
+   -------------------------------------------------------- */
+.discord-card {
+  margin: 14px 0 20px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  padding: 12px 14px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  text-align: left;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.discord-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background-color: var(--discord-status-color, #71717a);
+  transition: background-color 0.4s ease;
+}
+
+.discord-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.discord-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.discord-user-tag {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #e4e4e7;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.discord-svg-icon {
+  width: 17px;
+  height: 17px;
+  color: #5865f2;
+  flex-shrink: 0;
+}
+
+.discord-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--discord-status-color, #a1a1aa);
+  transition: color 0.4s ease, border-color 0.4s ease;
+}
+
+.discord-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--discord-status-color, #71717a);
+  box-shadow: 0 0 6px var(--discord-status-glow, transparent);
+  animation: pulse-dot 2.5s ease-in-out infinite;
+  transition: background-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.discord-activity-body {
+  margin-top: 10px;
+  font-size: 0.8rem;
+}
+
+.presence-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.presence-img-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.presence-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.presence-fallback-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a1a1aa;
+}
+
+.presence-fallback-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.presence-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 2px;
+  text-align: left;
+}
+
+.presence-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.presence-title {
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.84rem;
+}
+
+.presence-details, .presence-state {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.presence-custom-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 8px;
+  color: #f4f4f5;
+  font-size: 0.78rem;
+}
+
+.presence-custom-emoji {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.presence-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 3px 2px;
+}
+
+.presence-spotify-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  height: 14px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.presence-spotify-bars span {
+  width: 2.5px;
+  background: #1db954;
+  border-radius: 1px;
+  animation: spotify-bar 1.2s ease-in-out infinite alternate;
+}
+
+.presence-spotify-bars span:nth-child(1) { height: 45%; animation-delay: 0.1s; }
+.presence-spotify-bars span:nth-child(2) { height: 100%; animation-delay: 0.35s; }
+.presence-spotify-bars span:nth-child(3) { height: 60%; animation-delay: 0.2s; }
 
 /* --------------------------------------------------------
    Social Icons Grid
