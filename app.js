@@ -67,6 +67,142 @@ function getMediaBlob(key) {
 }
 
 // ----------------------------------------------------
+// DISCORD LANYARD CLIENT & HELPER FUNCTIONS
+// ----------------------------------------------------
+class LanyardClient {
+  constructor(userId, onUpdate) {
+    this.userId = userId;
+    this.onUpdate = onUpdate;
+    this.ws = null;
+    this.heartbeatTimer = null;
+    this.reconnectTimer = null;
+    this.isDestroyed = false;
+  }
+
+  start() {
+    this.fetchRest();
+    this.connectWs();
+  }
+
+  updateUserId(newUserId) {
+    if (this.userId === newUserId) return;
+    this.userId = newUserId;
+    this.cleanupWs();
+    if (this.ws) {
+      try { this.ws.close(); } catch (_) {}
+    }
+    this.fetchRest();
+    this.connectWs();
+  }
+
+  async fetchRest() {
+    if (!this.userId) return;
+    try {
+      const res = await fetch(`https://api.lanyard.rest/v1/users/${this.userId}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          this.onUpdate(json.data);
+        }
+      }
+    } catch (err) {
+      console.warn("Lanyard REST fetch notice:", err);
+    }
+  }
+
+  connectWs() {
+    if (this.isDestroyed || !this.userId) return;
+    try {
+      this.ws = new WebSocket("wss://api.lanyard.rest/socket");
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          const { op, t, d } = msg;
+
+          if (op === 1) { // Hello
+            const heartbeatInterval = d.heartbeat_interval || 30000;
+            this.startHeartbeat(heartbeatInterval);
+
+            // Op 2: Subscribe to user ID
+            this.ws.send(JSON.stringify({
+              op: 2,
+              d: { subscribe_to_id: this.userId }
+            }));
+          } else if (op === 0) { // Event
+            if (t === "INIT_STATE" || t === "PRESENCE_UPDATE") {
+              this.onUpdate(d);
+            }
+          }
+        } catch (e) {
+          console.warn("Lanyard WS parse error:", e);
+        }
+      };
+
+      this.ws.onclose = () => {
+        this.cleanupWs();
+        if (!this.isDestroyed) {
+          this.reconnectTimer = setTimeout(() => this.connectWs(), 4000);
+        }
+      };
+
+      this.ws.onerror = () => {
+        if (this.ws) this.ws.close();
+      };
+    } catch (e) {
+      if (!this.isDestroyed) {
+        this.reconnectTimer = setTimeout(() => this.connectWs(), 6000);
+      }
+    }
+  }
+
+  startHeartbeat(interval) {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ op: 3 }));
+      }
+    }, interval);
+  }
+
+  cleanupWs() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+
+  destroy() {
+    this.isDestroyed = true;
+    this.cleanupWs();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.ws) {
+      try { this.ws.close(); } catch (_) {}
+    }
+  }
+}
+
+function formatActivityElapsed(startTimestamp) {
+  if (!startTimestamp) return "";
+  const diffSec = Math.floor((Date.now() - startTimestamp) / 1000);
+  if (diffSec < 0) return "";
+  const hours = Math.floor(diffSec / 3600);
+  const minutes = Math.floor((diffSec % 3600) / 60);
+  if (hours > 0) {
+    return `${hours} Std. ${minutes} Min.`;
+  }
+  return `${minutes} Min.`;
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// ----------------------------------------------------
 // STATE & CONFIGURATION MERGE
 // ----------------------------------------------------
 let activeConfig = JSON.parse(JSON.stringify(CONFIG));
@@ -98,6 +234,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const avatarGlow = document.getElementById("avatar-glow");
   const socialLinksContainer = document.getElementById("social-links");
   const viewCountEl = document.getElementById("view-count");
+
+  // Discord UI Elements
+  const avatarWrapper = document.getElementById("avatar-wrapper");
+  const avatarRing = document.getElementById("avatar-ring");
+  const avatarStatusBadge = document.getElementById("avatar-status-badge");
+  const discordCard = document.getElementById("discord-card");
+  const discordUsername = document.getElementById("discord-username");
+  const discordStatusPill = document.getElementById("discord-status-pill");
+  const discordStatusText = document.getElementById("discord-status-text");
+  const discordActivityBody = document.getElementById("discord-activity-body");
   
   // Media Controls
   const btnPlayPause = document.getElementById("btn-play-pause");
@@ -143,6 +289,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const inputProfileName = document.getElementById("input-profile-name");
   const inputProfileLocation = document.getElementById("input-profile-location");
   const inputProfileViews = document.getElementById("input-profile-views");
+  const inputDiscordId = document.getElementById("input-discord-id");
+  const checkDiscordAvatar = document.getElementById("check-discord-avatar");
+  const checkDiscordPresence = document.getElementById("check-discord-presence");
 
   const adminLinksList = document.getElementById("admin-links-list");
   const btnAddLink = document.getElementById("btn-add-link");
@@ -168,6 +317,169 @@ document.addEventListener("DOMContentLoaded", async () => {
   let isPlaying = false;
   let hasEntered = false;
   let previousVolume = activeConfig.media.defaultVolume || 0.5;
+  let activeLanyard = null;
+
+  // Discord Live Presence Handler
+  function handleDiscordUpdate(data) {
+    if (!data) return;
+
+    const status = data.discord_status || "offline";
+    const user = data.discord_user;
+    const activities = data.activities || [];
+
+    // 1. Status Ring & Badge updates
+    const statusClasses = ["status-online", "status-idle", "status-dnd", "status-offline"];
+    const targetClass = `status-${status}`;
+
+    const elementsToClass = [avatarWrapper, avatarRing, avatarStatusBadge, discordCard, discordStatusPill];
+    elementsToClass.forEach(el => {
+      if (el) {
+        statusClasses.forEach(c => el.classList.remove(c));
+        el.classList.add(targetClass);
+      }
+    });
+
+    // German status labels
+    const statusLabels = {
+      online: "Online",
+      idle: "Abwesend",
+      dnd: "Bitte nicht stören",
+      offline: "Offline"
+    };
+
+    if (discordStatusText) {
+      discordStatusText.textContent = statusLabels[status] || "Offline";
+    }
+
+    if (avatarStatusBadge) {
+      avatarStatusBadge.title = `Discord: ${statusLabels[status] || "Offline"}`;
+    }
+
+    // 2. Dynamic Avatar from Discord
+    if (user && user.avatar && activeConfig.discord?.useDiscordAvatar !== false) {
+      const isGif = user.avatar.startsWith("a_");
+      const avatarUrl = `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${isGif ? "gif" : "png"}?size=512`;
+      if (profileAvatar && profileAvatar.src !== avatarUrl) {
+        profileAvatar.src = avatarUrl;
+      }
+    }
+
+    // 3. Username
+    if (discordUsername && user) {
+      discordUsername.textContent = user.username ? `@${user.username}` : (user.global_name || "Discord");
+    }
+
+    // 4. Presence Display
+    if (!discordActivityBody) return;
+
+    if (activeConfig.discord?.showPresenceCard === false) {
+      if (discordCard) discordCard.style.display = "none";
+      return;
+    } else if (discordCard) {
+      discordCard.style.display = "block";
+    }
+
+    // A. Check Spotify first
+    if (data.listening_to_spotify && data.spotify) {
+      const s = data.spotify;
+      discordActivityBody.innerHTML = `
+        <div class="presence-item">
+          <div class="presence-img-wrap">
+            <img src="${escapeHtml(s.album_art_url)}" alt="Album" class="presence-img">
+          </div>
+          <div class="presence-info">
+            <span class="presence-label" style="color: #1db954;">Hört auf Spotify</span>
+            <span class="presence-title">${escapeHtml(s.song)}</span>
+            <span class="presence-details">${escapeHtml(s.artist)}</span>
+          </div>
+          <div class="presence-spotify-bars" title="Spielt Musik">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    // B. Check Game or other rich presence (type !== 4)
+    const gameActivity = activities.find(a => a.type !== 4);
+    const customStatus = activities.find(a => a.type === 4);
+
+    if (gameActivity) {
+      let iconUrl = "";
+      if (gameActivity.assets && gameActivity.assets.large_image) {
+        const img = gameActivity.assets.large_image;
+        if (img.startsWith("mp:external/")) {
+          iconUrl = `https://media.discordapp.net/external/${img.replace("mp:external/", "")}`;
+        } else {
+          iconUrl = `https://cdn.discordapp.com/app-assets/${gameActivity.application_id}/${img}.png`;
+        }
+      }
+
+      let typeText = "Spielt";
+      if (gameActivity.type === 1) typeText = "Streamt";
+      else if (gameActivity.type === 2) typeText = "Hört";
+      else if (gameActivity.type === 3) typeText = "Schaut";
+      else if (gameActivity.type === 5) typeText = "Tritt an in";
+
+      const elapsedStr = formatActivityElapsed(gameActivity.timestamps?.start);
+
+      discordActivityBody.innerHTML = `
+        <div class="presence-item">
+          <div class="presence-img-wrap">
+            ${iconUrl 
+              ? `<img src="${escapeHtml(iconUrl)}" alt="${escapeHtml(gameActivity.name)}" class="presence-img" onerror="this.style.display='none'">` 
+              : `<div class="presence-fallback-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></div>`}
+          </div>
+          <div class="presence-info">
+            <span class="presence-label">${typeText}</span>
+            <span class="presence-title">${escapeHtml(gameActivity.name)}</span>
+            ${gameActivity.details ? `<span class="presence-details">${escapeHtml(gameActivity.details)}</span>` : ""}
+            ${gameActivity.state ? `<span class="presence-state">${escapeHtml(gameActivity.state)}</span>` : ""}
+            ${elapsedStr ? `<span class="presence-state" style="font-size:0.7rem; opacity:0.85;">⏱️ ${elapsedStr}</span>` : ""}
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    // C. Check Custom Status
+    if (customStatus && customStatus.state) {
+      let emojiHtml = "";
+      if (customStatus.emoji) {
+        if (customStatus.emoji.id) {
+          const ext = customStatus.emoji.animated ? "gif" : "png";
+          emojiHtml = `<img src="https://cdn.discordapp.com/emojis/${customStatus.emoji.id}.${ext}" class="presence-custom-emoji" alt="emoji">`;
+        } else if (customStatus.emoji.name) {
+          emojiHtml = `<span class="presence-emoji-char">${escapeHtml(customStatus.emoji.name)}</span>`;
+        }
+      }
+
+      discordActivityBody.innerHTML = `
+        <div class="presence-custom-status">
+          ${emojiHtml}
+          <span class="presence-custom-text">${escapeHtml(customStatus.state)}</span>
+        </div>
+      `;
+      return;
+    }
+
+    // D. Default / Device State
+    let deviceHint = "";
+    if (status !== "offline") {
+      if (data.active_on_discord_desktop) deviceHint = "🖥️ Aktiv auf Desktop";
+      else if (data.active_on_discord_mobile) deviceHint = "📱 Aktiv auf Smartphone";
+      else if (data.active_on_discord_web) deviceHint = "🌐 Aktiv im Browser";
+      else deviceHint = "🟢 Aktiv auf Discord";
+    } else {
+      deviceHint = "🌙 Zuletzt offline";
+    }
+
+    discordActivityBody.innerHTML = `
+      <div class="presence-empty-state">
+        <span>${deviceHint}</span>
+      </div>
+    `;
+  }
 
   // --------------------------------------------------
   // 1. RENDER ACTIVE CONFIG TO LIVE UI
@@ -238,6 +550,27 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Render Social Links
     renderSocialLinks();
+
+    // Discord Integration Init / Update
+    const discordId = (activeConfig.discord && activeConfig.discord.userId) || "453756683886264321";
+    if (activeConfig.discord?.enabled !== false && discordId) {
+      if (!activeLanyard) {
+        activeLanyard = new LanyardClient(discordId, handleDiscordUpdate);
+        activeLanyard.start();
+      } else {
+        activeLanyard.updateUserId(discordId);
+      }
+    }
+  }
+
+  // Click Discord card to open profile
+  if (discordCard) {
+    discordCard.style.cursor = "pointer";
+    discordCard.title = "Klicken, um Discord-Profil zu öffnen";
+    discordCard.addEventListener("click", () => {
+      const id = (activeConfig.discord && activeConfig.discord.userId) || "453756683886264321";
+      window.open(`https://discord.com/users/${id}`, "_blank", "noopener,noreferrer");
+    });
   }
 
   function renderSocialLinks() {
@@ -457,6 +790,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     inputProfileLocation.value = activeConfig.profile.location || "";
     inputProfileViews.value = localStorage.getItem("jonas_profile_views") || activeConfig.profile.viewsStart || 119;
 
+    if (inputDiscordId) {
+      inputDiscordId.value = (activeConfig.discord && activeConfig.discord.userId) || "453756683886264321";
+    }
+    if (checkDiscordAvatar) {
+      checkDiscordAvatar.checked = activeConfig.discord?.useDiscordAvatar !== false;
+    }
+    if (checkDiscordPresence) {
+      checkDiscordPresence.checked = activeConfig.discord?.showPresenceCard !== false;
+    }
+
     inputSplashText.value = activeConfig.effects.splashText || "[ click anywhere to enter ]";
     inputGlowColor.value = activeConfig.effects.glowColor || "#ffffff";
     glowColorPreview.textContent = activeConfig.effects.glowColor || "#ffffff";
@@ -633,6 +976,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       activeConfig.profile.viewsStart = views;
       localStorage.setItem("jonas_profile_views", views);
     }
+
+    if (!activeConfig.discord) activeConfig.discord = {};
+    if (inputDiscordId) activeConfig.discord.userId = inputDiscordId.value.trim() || "453756683886264321";
+    if (checkDiscordAvatar) activeConfig.discord.useDiscordAvatar = checkDiscordAvatar.checked;
+    if (checkDiscordPresence) activeConfig.discord.showPresenceCard = checkDiscordPresence.checked;
+    activeConfig.discord.enabled = true;
 
     if (inputVideoUrl.value.trim()) activeConfig.media.videoSrc = inputVideoUrl.value.trim();
     activeConfig.media.trackTitle = inputTrackTitle.value.trim();
